@@ -8,20 +8,17 @@ class SearchQuery(BaseModel):
     query: str
     purpose: str  # why this sub-query helps cover the topic
 
-
 class InferredSchema(BaseModel):
     # Data schema inferred by planner
     columns: list[str]
     entity_type: str # e.g. "startup", "restaurant", "tool"
     description: str
 
-
 class PlannerOutput(BaseModel):
     """Output of the query planner stage."""
     original_query: str
     sub_queries: list[SearchQuery]
-    schema: InferredSchema
-
+    entity_schema: InferredSchema
 
 # search_scrape.py
 class SearchResult(BaseModel):
@@ -31,7 +28,6 @@ class SearchResult(BaseModel):
     snippet: str
     source_query: str # which sub-query produced this
 
-
 class ScrapedPage(BaseModel):
     url: str
     title: str
@@ -39,13 +35,11 @@ class ScrapedPage(BaseModel):
     success: bool
     error: Optional[str] = None
 
-
 # extractor.py
 class CellSource(BaseModel):
     # Tracibility 
     url: str
     snippet: str # the exact text passage supporting this value
-
 
 class ExtractedEntity(BaseModel):
     attributes: dict[str, Optional[str]] # column_name==value
@@ -53,13 +47,11 @@ class ExtractedEntity(BaseModel):
     source_url: str
     confidence: Optional[float] = None
 
-
 # merger.py
 class MergedEntity(BaseModel):
     attributes: dict[str, Optional[str]]
     sources: dict[str, list[CellSource]]
     source_urls: list[str]
-
 
 # reflection.py
 class ReflectionResult(BaseModel):
@@ -68,12 +60,11 @@ class ReflectionResult(BaseModel):
     additional_queries: list[str]
     should_research_more: bool
 
-
 # final output
 class PipelineResult(BaseModel):
     # Final output sent to frontend
     query: str
-    schema: InferredSchema
+    entity_schema: InferredSchema
     entities: list[MergedEntity]
     total_sources_consulted: int
     total_pages_scraped: int
