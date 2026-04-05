@@ -74,9 +74,9 @@ class EntityExtractor:
         for raw in result.get("entities", []):
             sources = {}
             for col, src in raw.get("sources", {}).items():
-                if isinstance(src, dict) and "snippet" in src:
-                    sources[col] = CellSource(url=page.url, snippet=src["snippet"])
-                elif isinstance(src, str):
+                if isinstance(src, dict) and src.get("snippet"):
+                    sources[col] = CellSource(url=page.url, snippet=str(src["snippet"]))
+                elif isinstance(src, str) and src:
                     sources[col] = CellSource(url=page.url, snippet=src)
 
             # Convert all values to strings (LLM sometimes returns ints/floats)
@@ -103,6 +103,6 @@ class EntityExtractor:
             print(f"Extracting page {i+1}/{len(successful_pages)}")
             entities = await self.extract_from_page(page, schema)
             all_entities.extend(entities)
-            time.sleep(2)
+            time.sleep(1)
         print(f"Total entities extracted: {len(all_entities)}")
         return all_entities

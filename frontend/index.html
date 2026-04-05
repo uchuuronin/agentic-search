@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic Search</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        h1 { text-align: center; font-size: 2rem; margin-bottom: 0.5rem; }
+        .subtitle { text-align: center; color: #666; margin-bottom: 2rem; }
+
+        /* Search */
+        .search-box { display: flex; gap: 0.5rem; max-width: 600px; margin: 0 auto 2rem; }
+        .search-box input { flex: 1; padding: 0.75rem 1rem; font-size: 1rem; border: 2px solid #ddd; border-radius: 8px; outline: none; }
+        .search-box input:focus { border-color: #4a90d9; }
+        .search-box button { padding: 0.75rem 1.5rem; font-size: 1rem; background: #4a90d9; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        .search-box button:disabled { background: #999; cursor: not-allowed; }
+
+        /* Pipeline status */
+        .stages { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; margin-bottom: 2rem; }
+        .stage { padding: 0.4rem 0.8rem; border-radius: 20px; font-size: 0.85rem; background: #e0e0e0; color: #666; }
+        .stage.active { background: #4a90d9; color: white; }
+        .stage.done { background: #4caf50; color: white; }
+
+        /* Results */
+        .meta { text-align: center; color: #666; margin-bottom: 1rem; font-size: 0.9rem; }
+        .schema-info { text-align: center; background: #e8f4fd; padding: 0.75rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.9rem; }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        th { background: #4a90d9; color: white; padding: 0.75rem; text-align: left; font-size: 0.85rem; }
+        td { padding: 0.75rem; border-bottom: 1px solid #eee; font-size: 0.85rem; position: relative; }
+        tr:hover { background: #f8f9fa; }
+
+        /* Source tooltip */
+        .has-source { cursor: help; border-bottom: 1px dotted #4a90d9; }
+        .tooltip { display: none; position: absolute; bottom: 100%; left: 0; background: #333; color: white; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.8rem; max-width: 350px; z-index: 10; white-space: normal; }
+        .tooltip a { color: #7cb9f0; }
+        .has-source:hover .tooltip { display: block; }
+
+        .error { text-align: center; color: #d32f2f; margin: 1rem 0; }
+        .loading { text-align: center; color: #666; margin: 2rem 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Agentic Search</h1>
+        <p class="subtitle">AI-powered structured entity discovery from the web</p>
+
+        <div class="search-box">
+            <input type="text" id="query" placeholder="e.g. AI startups in healthcare, top pizza in Brooklyn..." />
+            <button id="searchBtn" onclick="doSearch()">Search</button>
+        </div>
+
+        <div id="stages" class="stages"></div>
+        <div id="error" class="error" style="display:none"></div>
+        <div id="loading" class="loading" style="display:none">Running pipeline...</div>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const ALL_STAGES = ['planning', 'searching', 'scraping', 'extracting', 'refining', 'reflecting'];
+        let completedStages = [];
+
+        function renderStages() {
+            const el = document.getElementById('stages');
+            el.innerHTML = ALL_STAGES.map(s => {
+                const done = completedStages.includes(s);
+                const active = completedStages.length > 0 && completedStages[completedStages.length - 1] === s;
+                const cls = done ? (active ? 'stage active' : 'stage done') : 'stage';
+                return `<span class="${cls}">${s}</span>`;
+            }).join('');
+        }
+
+        function renderResults(data) {
+            const el = document.getElementById('results');
+            const schema = data.entity_schema;
+            const entities = data.entities;
+
+            let html = `
+                <div class="schema-info">
+                    Found <strong>${entities.length}</strong> ${schema.entity_type} entities
+                    across ${data.total_pages_scraped} pages
+                    (${data.reflection_rounds} reflection round${data.reflection_rounds !== 1 ? 's' : ''})
+                </div>
+                <table>
+                    <thead><tr>${schema.columns.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+                    <tbody>
+            `;
+
+            for (const entity of entities) {
+                html += '<tr>';
+                for (const col of schema.columns) {
+                    const val = entity.attributes[col] || '—';
+                    const sources = entity.sources[col];
+                    if (sources && sources.length > 0) {
+                        const src = sources[0];
+                        html += `<td><span class="has-source">${val}
+                            <span class="tooltip">"${src.snippet}"<br><a href="${src.url}" target="_blank">source</a></span>
+                        </span></td>`;
+                    } else {
+                        html += `<td>${val}</td>`;
+                    }
+                }
+                html += '</tr>';
+            }
+
+            html += '</tbody></table>';
+            el.innerHTML = html;
+        }
+
+        async function doSearch() {
+            const query = document.getElementById('query').value.trim();
+            if (!query) return;
+
+            const btn = document.getElementById('searchBtn');
+            btn.disabled = true;
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('loading').style.display = 'block';
+            completedStages = [];
+            renderStages();
+
+            try {
+                const response = await fetch(`/api/search/stream?q=${encodeURIComponent(query)}`);
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const raw = line.slice(6);
+                            if (raw === '[DONE]') continue;
+                            try {
+                                const msg = JSON.parse(raw);
+                                if (msg.type === 'stage') {
+                                    completedStages.push(msg.stage);
+                                    renderStages();
+                                }
+                                if (msg.type === 'result') {
+                                    document.getElementById('loading').style.display = 'none';
+                                    renderResults(msg.data);
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                }
+            } catch (e) {
+                document.getElementById('error').textContent = `Error: ${e.message}`;
+                document.getElementById('error').style.display = 'block';
+            }
+
+            document.getElementById('loading').style.display = 'none';
+            btn.disabled = false;
+        }
+
+        // Enter key triggers search
+        document.getElementById('query').addEventListener('keydown', e => {
+            if (e.key === 'Enter') doSearch();
+        });
+    </script>
+</body>
+</html>
