@@ -11,32 +11,28 @@
         h1 { text-align: center; font-size: 2rem; margin-bottom: 0.5rem; }
         .subtitle { text-align: center; color: #666; margin-bottom: 2rem; }
 
-        /* Search */
         .search-box { display: flex; gap: 0.5rem; max-width: 600px; margin: 0 auto 2rem; }
         .search-box input { flex: 1; padding: 0.75rem 1rem; font-size: 1rem; border: 2px solid #ddd; border-radius: 8px; outline: none; }
         .search-box input:focus { border-color: #4a90d9; }
         .search-box button { padding: 0.75rem 1.5rem; font-size: 1rem; background: #4a90d9; color: white; border: none; border-radius: 8px; cursor: pointer; }
         .search-box button:disabled { background: #999; cursor: not-allowed; }
 
-        /* Pipeline status */
         .stages { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; margin-bottom: 2rem; }
         .stage { padding: 0.4rem 0.8rem; border-radius: 20px; font-size: 0.85rem; background: #e0e0e0; color: #666; }
         .stage.active { background: #4a90d9; color: white; }
         .stage.done { background: #4caf50; color: white; }
 
-        /* Results */
-        .meta { text-align: center; color: #666; margin-bottom: 1rem; font-size: 0.9rem; }
-        .schema-info { text-align: center; background: #e8f4fd; padding: 0.75rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.9rem; }
+        .schema-info { text-align: center; background: #e8f4fd; padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem; font-size: 0.9rem; }
+        .source-hint { text-align: center; color: #999; font-size: 0.8rem; margin-bottom: 1.5rem; }
         table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         th { background: #4a90d9; color: white; padding: 0.75rem; text-align: left; font-size: 0.85rem; }
         td { padding: 0.75rem; border-bottom: 1px solid #eee; font-size: 0.85rem; position: relative; }
         tr:hover { background: #f8f9fa; }
 
-        /* Source tooltip */
-        .has-source { cursor: help; border-bottom: 1px dotted #4a90d9; }
-        .tooltip { display: none; position: absolute; bottom: 100%; left: 0; background: #333; color: white; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.8rem; max-width: 350px; z-index: 10; white-space: normal; }
-        .tooltip a { color: #7cb9f0; }
-        .has-source:hover .tooltip { display: block; }
+        .has-source { cursor: pointer; border-bottom: 1px dotted #4a90d9; }
+        .tooltip { display: none; position: absolute; top: 100%; left: 0; background: #333; color: white; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.8rem; max-width: 350px; z-index: 10; white-space: normal; margin-top: 4px; }
+        .tooltip.visible { display: block; }
+        .tooltip a { color: #7cb9f0; text-decoration: underline; }
 
         .error { text-align: center; color: #d32f2f; margin: 1rem 0; }
         .loading { text-align: center; color: #666; margin: 2rem 0; }
@@ -59,20 +55,30 @@
     </div>
 
     <script>
-        const ALL_STAGES = ['planning', 'searching', 'scraping', 'extracting', 'refining', 'reflecting'];
+        const BASE_STAGES = ['planning', 'searching', 'scraping', 'extracting', 'refining', 'reflecting'];
         let completedStages = [];
+        let pipelineDone = false;
 
         function renderStages() {
             const el = document.getElementById('stages');
-            el.innerHTML = ALL_STAGES.map(s => {
+            // Show base stages always, add re-searching only if it appeared
+            let stages = [...BASE_STAGES];
+            if (completedStages.includes('re-searching')) {
+                stages.push('re-searching');
+            }
+
+            const lastStage = completedStages[completedStages.length - 1];
+            el.innerHTML = stages.map(s => {
                 const done = completedStages.includes(s);
-                const active = completedStages.length > 0 && completedStages[completedStages.length - 1] === s;
-                const cls = done ? (active ? 'stage active' : 'stage done') : 'stage';
+                let cls = 'stage';
+                if (pipelineDone && done) cls = 'stage done';           // all green when done
+                else if (done && s === lastStage) cls = 'stage active'; // current = blue
+                else if (done) cls = 'stage done';                      // past = green
                 return `<span class="${cls}">${s}</span>`;
             }).join('');
         }
 
-        function renderResults(data) {
+        function renderResults(data, elapsed) {
             const el = document.getElementById('results');
             const schema = data.entity_schema;
             const entities = data.entities;
@@ -82,7 +88,9 @@
                     Found <strong>${entities.length}</strong> ${schema.entity_type} entities
                     across ${data.total_pages_scraped} pages
                     (${data.reflection_rounds} reflection round${data.reflection_rounds !== 1 ? 's' : ''})
+                    in <strong>${elapsed}s</strong>
                 </div>
+                <div class="source-hint">Click on <span style="border-bottom: 1px dotted #4a90d9;">dotted underlined</span> values to view source</div>
                 <table>
                     <thead><tr>${schema.columns.map(c => `<th>${c}</th>`).join('')}</tr></thead>
                     <tbody>
@@ -95,8 +103,9 @@
                     const sources = entity.sources[col];
                     if (sources && sources.length > 0) {
                         const src = sources[0];
-                        html += `<td><span class="has-source">${val}
-                            <span class="tooltip">"${src.snippet}"<br><a href="${src.url}" target="_blank">source</a></span>
+                        const snippet = src.snippet ? src.snippet.replace(/"/g, '&quot;') : '';
+                        html += `<td><span class="has-source" onclick="toggleTooltip(this)">${val}
+                            <span class="tooltip">"${snippet}"<br><a href="${src.url}" target="_blank">view source ↗</a></span>
                         </span></td>`;
                     } else {
                         html += `<td>${val}</td>`;
@@ -109,6 +118,19 @@
             el.innerHTML = html;
         }
 
+        function toggleTooltip(el) {
+            document.querySelectorAll('.tooltip.visible').forEach(t => {
+                if (t !== el.querySelector('.tooltip')) t.classList.remove('visible');
+            });
+            el.querySelector('.tooltip').classList.toggle('visible');
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.has-source')) {
+                document.querySelectorAll('.tooltip.visible').forEach(t => t.classList.remove('visible'));
+            }
+        });
+
         async function doSearch() {
             const query = document.getElementById('query').value.trim();
             if (!query) return;
@@ -119,7 +141,10 @@
             document.getElementById('results').innerHTML = '';
             document.getElementById('loading').style.display = 'block';
             completedStages = [];
+            pipelineDone = false;
             renderStages();
+
+            const startTime = Date.now();
 
             try {
                 const response = await fetch(`/api/search/stream?q=${encodeURIComponent(query)}`);
@@ -147,7 +172,10 @@
                                 }
                                 if (msg.type === 'result') {
                                     document.getElementById('loading').style.display = 'none';
-                                    renderResults(msg.data);
+                                    pipelineDone = true;
+                                    renderStages();
+                                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                                    renderResults(msg.data, elapsed);
                                 }
                             } catch (e) {}
                         }
@@ -162,7 +190,6 @@
             btn.disabled = false;
         }
 
-        // Enter key triggers search
         document.getElementById('query').addEventListener('keydown', e => {
             if (e.key === 'Enter') doSearch();
         });
