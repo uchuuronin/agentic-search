@@ -23,12 +23,9 @@ class WebSearcher:
         logger.info(f"Searching: {sub_query.query}")
         try:
             loop = asyncio.get_event_loop()
-            def _do_search():
-                time.sleep(1)
-                with DDGS() as ddgs:
-                    return list(ddgs.text(sub_query.query, max_results=max_results))
-
-            raw_results = await loop.run_in_executor(None, _do_search)
+            time.sleep(2)
+            with DDGS() as ddgs:
+                raw_results = list(ddgs.text(sub_query.query, max_results=max_results))
 
             results = []
             for r in raw_results:
@@ -43,17 +40,17 @@ class WebSearcher:
                 ))
             return results
         except Exception as e:
-            logger.error(f"Search failed for '{sub_query.query}': {e}")
+            print(f"\tSearch failed: {e}")
             return []
 
     async def search_all(self, sub_queries: list[SearchQuery], max_results_per_query: int = 10) -> list[SearchResult]:
-        # parallel run of sub-queries
-        tasks = [
-            self.search_single(sq, max_results_per_query)
-            for sq in sub_queries
-        ]
-        all_results_nested = await asyncio.gather(*tasks)
-        all_results = [r for batch in all_results_nested for r in batch]
+        # sequential run of sub-queries
+        all_results = []
+        for i, sq in enumerate(sub_queries):
+            print(f"Search {i+1}/{len(sub_queries)}: {sq.query}")
+            results = await self.search_single(sq, max_results_per_query)
+            all_results.extend(results)
+            print(f"{len(results)} results")
         return self._deduplicate(all_results)
 
     def _deduplicate(self, results: list[SearchResult]) -> list[SearchResult]:
